@@ -26,7 +26,7 @@ INSTALLED_APPS = [
     'apps.user.apps.UserConfig',
     'apps.authentication.apps.AuthConfig',
     'apps.patient.apps.PatientConfig',
-    'apps.medicine.apps.MedicineConfig',
+    'apps.predictions.apps.PredictionsConfig',
     'apps.notification.apps.NotificationConfig',
 ]
 
@@ -44,7 +44,7 @@ ROOT_URLCONF = 'config.urls'
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated'
+        'rest_framework.permissions.AllowAny'
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.TokenAuthentication',
