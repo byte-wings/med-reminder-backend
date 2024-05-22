@@ -1,39 +1,48 @@
 import uuid
 import random
 from django.db import models
-from datetime import timedelta
-from django.utils import timezone
 from django.core.validators import RegexValidator
-from django.contrib.auth.models import AbstractBaseUser
+from django.contrib.auth.models import AbstractUser
+from django.utils.translation import gettext_lazy as _
+from django.contrib.auth.models import BaseUserManager
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.authentication.models import UserConfirmation
 
 MALE, FEMALE = ("male", "female")
 
 
-class UserConfirmation(models.Model):
+class UserManager(BaseUserManager):
     """
-    Model to store user verification codes and related information.
+    Custom user manager for User model.
     """
 
-    code = models.CharField(max_length=6)
-    user = models.ForeignKey(
-        'User', on_delete=models.CASCADE, related_name='verify_codes')
-    expiration_time = models.DateTimeField(null=True)
-    is_confirmed = models.BooleanField(default=False)
+    def create_user(self, phone_number, password=None, **extra_fields):
+        """Create and save a regular User with the given phone number and password."""
+        if not phone_number:
+            raise ValueError(_('The phone number must be set.'))
 
-    def __str__(self):
-        return str(self.user)
+        extra_fields.setdefault('is_staff', False)
+        extra_fields.setdefault('is_superuser', False)
+        return self._create_user(phone_number, password, **extra_fields)
 
-    def save(self, *args, **kwargs):
-        """
-        Override the save method to set expiration time for phone verification codes.
-        """
-        if not self.pk:
-            self.expiration_time = timezone.now() + timedelta(minutes=1)
-        super(UserConfirmation, self).save(*args, **kwargs)
+    def create_superuser(self, phone_number, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        # extra_fields.setdefault('user_roles', SUPER_USER)
+        return self._create_user(phone_number, password, **extra_fields)
+
+    def _create_user(self, phone_number, password, **extra_fields):
+        if not phone_number:
+            raise ValueError(_('The phone number must be set.'))
+
+        user = self.model(phone_number=phone_number, username=phone_number, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
 
 
-class User(AbstractBaseUser):
+class User(AbstractUser):
     """
     Custom user model with extended fields and methods.
     """
@@ -48,10 +57,15 @@ class User(AbstractBaseUser):
 
     first_name = models.CharField(max_length=255)
     last_name = models.CharField(max_length=255)
-    middle_name = models.CharField(max_length=255, blank=True, null=True)
     gender = models.CharField(max_length=6, choices=GENDER_TYPE)
+    email = models.EmailField(blank=True, null=True)
     phone_number = models.CharField(max_length=16, unique=True, validators=[_validate_phone])
     birth_date = models.DateField(blank=True, null=True)
+
+    objects = UserManager()
+
+    EMAIL_FIELD = "email"
+    USERNAME_FIELD = "phone_number"
 
     class Meta:
         db_table = "users"
@@ -102,4 +116,3 @@ class User(AbstractBaseUser):
         """
         self.check_pass()
         self.hashing_password()
-
