@@ -1,8 +1,6 @@
 from rest_framework import serializers
-from rest_framework.generics import get_object_or_404
 from rest_framework.exceptions import ValidationError
-from django.contrib.auth.models import update_last_login
-from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
 from .utils import phone_parser
@@ -53,23 +51,6 @@ class UserAuthSerializer(serializers.Serializer):
 class VerificationCodeSerializer(serializers.Serializer):
     token = serializers.CharField()
     code = serializers.CharField(required=True)
-
-
-class CustomTokenRefreshSerializer(TokenRefreshSerializer):
-    auth_type = serializers.CharField(default="confirmation")
-
-    def validate(self, attrs):
-        data = super().validate(attrs)
-
-        refresh = self.context['request'].data.get('refresh')
-        data['refresh'] = refresh
-
-        access_token_instance = AccessToken(data['access'])
-        user_id = access_token_instance['user_id']
-        user = get_object_or_404(User, id=user_id)
-        update_last_login(None, user)
-
-        return data
 
 
 class LogoutSerializer(serializers.Serializer):

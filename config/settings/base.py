@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     # local apps
     'apps.user.apps.UserConfig',
     'apps.authentication.apps.AuthConfig',
+    'apps.patient.apps.PatientConfig',
     'apps.notification.apps.NotificationConfig',
 ]
 

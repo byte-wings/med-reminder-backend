@@ -12,10 +12,9 @@ from .models import UserConfirmation
 from .serializers import (
     UserAuthSerializer,
     VerificationCodeSerializer,
-    CustomTokenRefreshSerializer,
     LogoutSerializer
 )
-from apps.auth.tokens import AuthenticationToken, VerificationToken
+from apps.authentication.tokens import AuthenticationToken, VerificationToken
 
 
 class UserAuthView(generics.GenericAPIView):
@@ -42,6 +41,7 @@ class UserAuthView(generics.GenericAPIView):
 
 
 class VerifyCodeView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
     serializer_class = VerificationCodeSerializer
 
     def post(self, request, *args, **kwargs):
@@ -90,49 +90,58 @@ class VerifyCodeView(generics.GenericAPIView):
 
 
 class CustomTokenRefreshView(TokenRefreshView):
-    serializer_class = CustomTokenRefreshSerializer
 
     def post(self, request: Request, *args, **kwargs) -> Response:
-        serializer = self.serializer_class(data=request.data)
+        serializer = self.get_serializer(data=request.data)
+
         if serializer.is_valid():
-            token = serializer.validated_data['refresh']
             try:
-                payload = VerificationToken(token).payload
-                if payload['type'] == 'confirmation':
-                    code = payload['code']
-                    user_id = payload['user_id']
-                    user = generics.get_object_or_404(User, id=user_id)
-                    verification = UserConfirmation.objects.filter(
-                        user=user, code=code, is_confirmed=False, expiration_time__gte=timezone.now()
-                    ).first()
-                    if not verification:
-                        return Response({"error": "Invalid or expired code."}, status=status.HTTP_400_BAD_REQUEST)
-                    verification.is_confirmed = True
-                    verification.save()
-                    access_token = VerificationToken.for_user(user)
-                    refresh_token = RefreshToken.for_user(user)
-                    response_data = {
-                        "access_token": str(access_token),
-                        "refresh_token": str(refresh_token),
-                    }
-                    response = Response(response_data, status=status.HTTP_200_OK)
-                    response.set_cookie(
-                        key='confirmation_refresh_token',
-                        value=str(refresh_token),
-                        httponly=True,
-                        secure=True,  # Use True if using HTTPS
-                        samesite='Strict'  # Adjust according to your needs
-                    )
-                    return response
-                elif payload['type'] == 'access':
-                    pass
-                else:
-                    return Response({"error": "Invalid token type."}, status=status.HTTP_400_BAD_REQUEST)
+                return self.handle_request(serializer.validated_data)
             except Exception as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def handle_request(self, data):
+        token = data['refresh']
+        token_type = data['token_type']
+
+        if token_type == 'confirmation':
+            return self.handle_confirmation(token)
+        elif token_type == 'access':
+            return super().post(self.request, *self.args, **self.kwargs)  # refresh access token using simplejwt
+        else:
+            return Response({"error": "Invalid token type."}, status=status.HTTP_400_BAD_REQUEST)
+
+    def handle_confirmation(self, refresh_token: str):
+        # user = generics.get_object_or_404(User, id=user_id)
+        verification = UserConfirmation.objects.filter(
+            user=user, code=code, is_confirmed=False, expiration_time__gte=timezone.now()
+        ).first()
+
+        if not verification:
+            return Response({"error": "Invalid or expired code."}, status=status.HTTP_400_BAD_REQUEST)
+
+        verification.is_confirmed = True
+        verification.save()
+        return self.generate_tokens(user)
+
+    def generate_tokens(self, user):
+        access_token = VerificationToken.for_user(user)
+        refresh_token = RefreshToken.for_user(user)
+        response_data = {
+            "access_token": str(access_token),
+            "refresh_token": str(refresh_token),
+        }
+        response = Response(response_data, status=status.HTTP_200_OK)
+        response.set_cookie(
+            key='confirmation_refresh_token',
+            value=str(refresh_token),
+            httponly=True,
+            secure=True,  # Use True if using HTTPS
+            samesite='Strict'
+        )
+        return response
 
 
 class LogoutView(generics.GenericAPIView):

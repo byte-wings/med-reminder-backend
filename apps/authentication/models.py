@@ -11,12 +11,13 @@ class ConfirmationRefreshToken(models.Model):
     refresh_count = models.IntegerField(default=0)
     max_refresh = models.IntegerField(default=3)
 
+    def save(self, *args, **kwargs):
+        if self.is_refreshable():
+            self.refresh_count += 1
+        super().save(*args, **kwargs)
+
     def is_refreshable(self):
         return self.refresh_count < self.max_refresh
-
-    def increment_refresh(self):
-        self.refresh_count += 1
-        self.save()
 
 
 class UserConfirmation(models.Model):
