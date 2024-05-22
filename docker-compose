@@ -1,0 +1,96 @@
+version: '3'
+
+services:
+  backend:
+    container_name: backend
+    image: backend
+    volumes:
+      - static:/static
+      - media:/app/config/media
+    env_file:
+      - .env
+    build:
+      context: ./
+      dockerfile: docker/backend/Dockerfile
+    depends_on:
+      - celery-worker
+    networks:
+      - backend
+      - redis
+      - postgres
+    ports:
+      - "8000:8000"
+
+  postgres:
+    container_name: postgres_container
+    image: postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres:/data/postgres
+    networks:
+      - postgres
+    restart: unless-stopped
+
+  proxy:
+    build:
+      context: ./docker/proxy
+    restart: always
+    volumes:
+      - "/etc/letsencrypt:/etc/letsencrypt"
+      - "/var/lib/letsencrypt:/var/lib/letsencrypt"
+      - "static:/static"
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    networks:
+      - backend
+    environment:
+      - DOMAIN=${DOMAIN}
+
+  celery-worker:
+    restart: always
+    build:
+      context: ./
+      dockerfile: docker/celery-worker/Dockerfile
+    volumes:
+      - .:/usr/src/app
+    depends_on:
+      - postgres
+      - redis
+      - pgadmin
+    environment:
+      DATABASE_NAME: ${DB_NAME}
+      DATABASE_USER: ${DB_USER}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      DATABASE_HOST: ${DB_HOST}
+      DATABASE_PORT: ${DB_PORT}
+      REDIS_URL: redis://redis:6379/0
+    networks:
+      - postgres
+      - redis
+      - celery-worker
+
+  redis:
+    restart: unless-stopped
+    image: redis:7-alpine
+    networks:
+      - redis
+
+networks:
+  backend:
+  postgres:
+    driver: bridge
+  redis:
+    driver: bridge
+  celery-worker:
+    driver: bridge
+
+volumes:
+  postgres:
+  static:
+  media:
