@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'apps.user.apps.UserConfig',
     'apps.authentication.apps.AuthConfig',
     'apps.patient.apps.PatientConfig',
+    'apps.medicine.apps.MedicineConfig',
     'apps.notification.apps.NotificationConfig',
 ]
 
