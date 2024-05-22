@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
-
 from decouple import config
+from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -16,10 +16,15 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # third-party apps
+    'channels',
     'rest_framework',
+    'rest_framework.authtoken',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
 
     # local apps
     'apps.user.apps.UserConfig',
+    'apps.authentication.apps.AuthConfig',
     'apps.notification.apps.NotificationConfig',
 ]
 
@@ -34,6 +39,43 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'config.urls'
+
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated'
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DATETIME_FORMAT': "%Y-%m-%d %H:%M:%S"
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1),  # For phone number verification
+    'AUTH_TOKEN_LIFETIME': timedelta(hours=2),  # For user authentication
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': False,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+    'JWK_URL': None,
+    'LEEWAY': 0,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'JTI_CLAIM': 'jti',
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
+}
 
 TEMPLATES = [
     {
@@ -52,6 +94,15 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -83,3 +134,5 @@ MEDIA_URL = 'media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+AUTH_USER_MODEL = "user.User"
