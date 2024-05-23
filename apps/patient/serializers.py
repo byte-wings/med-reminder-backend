@@ -1,6 +1,8 @@
 from django.db import models
 from rest_framework import serializers
 
+from .models import Drugs, MedicationSchedule
+
 
 def dynamic_crud_serializer(model: models.Model, fields: list, update=True):
     """
@@ -37,3 +39,24 @@ def dynamic_crud_serializer(model: models.Model, fields: list, update=True):
     DynamicCRUDSerializer.Meta.fields = fields
 
     return DynamicCRUDSerializer
+
+
+class MedicationScheduleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MedicationSchedule
+        fields = ['weekday', 'time']
+
+
+class DrugSerializer(serializers.ModelSerializer):
+    schedule = MedicationScheduleSerializer(many=True)
+
+    class Meta:
+        model = Drugs
+        fields = ['patient', 'type', 'amount', 'dose', 'notes', 'schedule']
+
+    def create(self, validated_data):
+        schedule_data = validated_data.pop('schedule')
+        drug = Drugs.objects.create(**validated_data)
+        for schedule in schedule_data:
+            MedicationSchedule.objects.create(drug=drug, **schedule)
+        return drug
