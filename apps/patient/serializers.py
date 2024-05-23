@@ -52,11 +52,14 @@ class DrugSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Drugs
-        fields = ['patient', 'type', 'amount', 'dose', 'notes', 'schedule']
+        fields = ['type', 'amount', 'dose', 'notes', 'schedule']
 
     def create(self, validated_data):
         schedule_data = validated_data.pop('schedule')
-        drug = Drugs.objects.create(**validated_data)
+        request = self.context['request']
+        patient = request.user  # Get the authenticated user
+
+        drug = Drugs.objects.create(patient=patient, **validated_data)
         for schedule in schedule_data:
             MedicationSchedule.objects.create(drug=drug, **schedule)
         return drug
