@@ -8,10 +8,11 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.user.models import User
-from .models import UserConfirmation
+from .models import UserConfirmation, ConfirmationRefreshToken
 from .serializers import (
     UserAuthSerializer,
     VerificationCodeSerializer,
+    CustomRefreshTokenSerializer,
     LogoutSerializer
 )
 from apps.authentication.tokens import AuthenticationToken, VerificationToken
@@ -23,10 +24,10 @@ class UserAuthView(generics.GenericAPIView):
 
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
-
         if serializer.is_valid():
             response = Response({
                 "access_token": serializer.validated_data["access_token"],
+                "is_new": serializer.validated_data["is_new"],
             })
             response.set_cookie(
                 key="refresh_token",
@@ -35,7 +36,6 @@ class UserAuthView(generics.GenericAPIView):
                 secure=True,  # Use True if using HTTPS
                 samesite='Strict'
             )
-
             return response
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -45,7 +45,7 @@ class VerifyCodeView(generics.GenericAPIView):
     serializer_class = VerificationCodeSerializer
 
     def post(self, request, *args, **kwargs):
-        serializer = VerificationCodeSerializer(data=request.data)
+        serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             token = serializer.validated_data['token']
             code = serializer.validated_data['code']
@@ -54,11 +54,8 @@ class VerifyCodeView(generics.GenericAPIView):
                 user_id = payload['user_id']
                 user = User.objects.get(id=user_id)
                 self.check_verify(user, code)
-
-                # User is now authenticated
                 access_token = AuthenticationToken.for_user(user)
                 refresh_token = RefreshToken.for_user(user)
-
                 response = Response({
                     "access_token": str(access_token),
                 }, status=status.HTTP_200_OK)
@@ -79,52 +76,67 @@ class VerifyCodeView(generics.GenericAPIView):
         verifies = user.verify_codes.filter(
             expiration_time__gte=timezone.now(), code=code, is_confirmed=False)
         if not verifies.exists():
-            data = {
-                'message': "Code is incorrect or expired"
-            }
             user.delete()
-            raise ValidationError(data)
+            raise ValidationError({'message': "Code is incorrect or expired"})
         verifies.update(is_confirmed=True)
         user.save()
         return True
 
 
 class CustomTokenRefreshView(TokenRefreshView):
+    serializer_class = CustomRefreshTokenSerializer
 
     def post(self, request: Request, *args, **kwargs) -> Response:
         serializer = self.get_serializer(data=request.data)
-
         if serializer.is_valid():
             try:
                 return self.handle_request(serializer.validated_data)
             except Exception as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def handle_request(self, data):
-        token = data['refresh']
+        refresh_token = data['refresh']
         token_type = data['token_type']
 
         if token_type == 'confirmation':
-            return self.handle_confirmation(token)
+            return self.handle_confirmation(refresh_token)
         elif token_type == 'access':
             return super().post(self.request, *self.args, **self.kwargs)  # refresh access token using simplejwt
-        else:
-            return Response({"error": "Invalid token type."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "Invalid token type."}, status=status.HTTP_400_BAD_REQUEST)
 
-    def handle_confirmation(self, refresh_token: str):
-        # user = generics.get_object_or_404(User, id=user_id)
-        verification = UserConfirmation.objects.filter(
-            user=user, code=code, is_confirmed=False, expiration_time__gte=timezone.now()
-        ).first()
+    def handle_confirmation(self, refresh_token):
+        try:
+            # Decode the refresh token to get the user information
+            token = RefreshToken(refresh_token)
+            user_id = token['user_id']
+            user = User.objects.get(id=user_id)
 
-        if not verification:
-            return Response({"error": "Invalid or expired code."}, status=status.HTTP_400_BAD_REQUEST)
+            # Retrieve the ConfirmationRefreshToken
+            confirmation_token = ConfirmationRefreshToken.objects.get(user=user, token=refresh_token)
 
-        verification.is_confirmed = True
-        verification.save()
-        return self.generate_tokens(user)
+            # Check if the refresh count is within the limit
+            if not confirmation_token.is_refreshable():
+                return Response({"error": "Refresh token usage limit exceeded."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Update the refresh count and save the token
+            confirmation_token.refresh_count += 1
+            confirmation_token.save()
+
+            # Generate a new access token and a new verification code
+            access_token = VerificationToken.for_user(user)
+            verification_code = user.create_verify_code()
+
+            response_data = {
+                "access_token": str(access_token),
+                "verification_code": verification_code,
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except ConfirmationRefreshToken.DoesNotExist:
+            return Response({"error": "Invalid refresh token."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def generate_tokens(self, user):
         access_token = VerificationToken.for_user(user)
@@ -151,15 +163,10 @@ class LogoutView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         try:
             refresh_token = serializer.validated_data['refresh']
             token = RefreshToken(refresh_token)
             token.blacklist()
-            data = {
-                "success": True,
-                "message": "You are logged out"
-            }
-            return Response(data=data, status=status.HTTP_205_RESET_CONTENT)
+            return Response({"success": True, "message": "You are logged out"}, status=status.HTTP_205_RESET_CONTENT)
         except TokenError:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)

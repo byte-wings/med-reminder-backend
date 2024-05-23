@@ -1,7 +1,7 @@
 from django.db import models
-from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
+from datetime import timedelta
 
 
 class ConfirmationRefreshToken(models.Model):
@@ -21,22 +21,15 @@ class ConfirmationRefreshToken(models.Model):
 
 
 class UserConfirmation(models.Model):
-    """
-    Model to store user verification codes and related information.
-    """
-
     code = models.CharField(max_length=6)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='verify_codes')
     expiration_time = models.DateTimeField(null=True)
     is_confirmed = models.BooleanField(default=False)
 
-    def __str__(self):
-        return str(self.user)
-
     def save(self, *args, **kwargs):
-        """
-        Override the save method to set expiration time for phone verification codes.
-        """
         if not self.pk:
             self.expiration_time = timezone.now() + timedelta(minutes=1)
-        super(UserConfirmation, self).save(*args, **kwargs)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return str(self.user)
